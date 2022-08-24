@@ -72,9 +72,9 @@ namespace RPADesktopActivityMonitor
         private bool fn = false, noprint = false, ishooked = false;
         private string typed = "", img = "", scr = "";
         private Dispatcher Dispatcher = null;
-        /*        public static readonly string TFRPA_RUNTIME_PATH = Environment.GetEnvironmentVariable("RUNTIME_PATH");
-                public static string RuntimePath = !String.IsNullOrEmpty(TFRPA_RUNTIME_PATH) ? TFRPA_RUNTIME_PATH : AppDomain.CurrentDomain.BaseDirectory;*/
-        public static string RuntimePath = "C:\\Users\\Admin\\AppData\\Local\\Techforce.ai\\Super Assistant App\\resources\\static\\Techforce\\src";
+        public static readonly string TFRPA_RUNTIME_PATH = Environment.GetEnvironmentVariable("RUNTIME_PATH");
+        public static string RuntimePath = !String.IsNullOrEmpty(TFRPA_RUNTIME_PATH) ? TFRPA_RUNTIME_PATH : AppDomain.CurrentDomain.BaseDirectory;
+        /*public static string RuntimePath = "C:\\Users\\Techforce\\AppData\\Local\\Techforce.ai\\Super Assistant App\\resources\\static\\Techforce\\src";*/
 
         public NamedPipeClientStream clientStream = new NamedPipeClientStream(".", "superextension", PipeDirection.In);
         private static dynamic configObject = JsonConvert.DeserializeObject(File.ReadAllText(Path.Combine(RuntimePath, "..\\..\\Configs\\extnHost_chrome\\config.json")));
@@ -380,11 +380,11 @@ namespace RPADesktopActivityMonitor
                             if (actionVar == "stopRecording")
                             {
                                 stopLogging();
-                                File.AppendAllText(@"C:\Users\Admin\AppData\Local\Temp\dump.txt", $"Finish e dhuktesi{Environment.NewLine}");
+                                //File.AppendAllText(@"C:\Users\Techforce\AppData\Local\Temp\dump.txt", $"Finish e dhuktesi{Environment.NewLine}");
                                 finish(RuntimePath, executeoutputobject);
                                 Console.WriteLine("Activity Monitor (Desktop) Stopped");
                                 Dispose(); //CALL THIS IF YOU WANT THE PROGRAM TO EXIT
-                                File.AppendAllText(@"C:\Users\Admin\AppData\Local\Temp\dump.txt", $"Finished Completely{Environment.NewLine}");
+                                //File.AppendAllText(@"C:\Users\Techforce\AppData\Local\Temp\dump.txt", $"Finished Completely{Environment.NewLine}");
                             }
                         }
                     }
@@ -478,6 +478,7 @@ namespace RPADesktopActivityMonitor
                     fw.WriteLine("    {");
                     fw.WriteLine("        \"type\": \"record\",");
                     fw.WriteLine("        \"origin\": \"desktop\",");
+                    fw.WriteLine("        \"description\": \"Keystroke\",");
                     fw.WriteLine("        \"actionType\":\"" + "kbd" + "\",");
                     fw.WriteLine("        \"value\": \"" + typed + "\",");
                     fw.WriteLine($"        \"app_name\": \"{appName}\",");
@@ -503,6 +504,8 @@ namespace RPADesktopActivityMonitor
                         fw.WriteLine("    {");
                         fw.WriteLine("        \"type\": \"record\",");
                         fw.WriteLine("        \"origin\": \"desktop\",");
+                        fw.WriteLine("        \"description\": \"Double Click\",");
+                        fw.WriteLine("        \"selectorType\": \"imgSelector\",");
                         fw.WriteLine("        \"actionType\":\"dbclick\",");
                         fw.WriteLine($"        \"image\": \"{img}\",");
                         fw.WriteLine($"        \"pageScreenshot\": \"{scr}\",");
@@ -548,6 +551,8 @@ namespace RPADesktopActivityMonitor
                     fw.WriteLine("    {");
                     fw.WriteLine("        \"type\": \"record\",");
                     fw.WriteLine("        \"origin\": \"desktop\",");
+                    fw.WriteLine("        \"description\": \"Right Click\",");
+                    fw.WriteLine("        \"selectorType\": \"imgSelector\",");
                     fw.WriteLine("        \"actionType\":\"rclick\",");
                     fw.WriteLine($"        \"image\": \"{img}\",");
                     fw.WriteLine($"        \"pageScreenshot\": \"{scr}\",");
@@ -664,6 +669,7 @@ namespace RPADesktopActivityMonitor
                 fw.WriteLine("    {");
                 fw.WriteLine("        \"type\": \"record\",");
                 fw.WriteLine("        \"origin\": \"desktop\",");
+                fw.WriteLine("        \"description\": \"Keystroke\",");
                 fw.WriteLine("        \"actionType\":\"" + "kbd" + "\",");
                 fw.WriteLine("        \"value\": \"" + typed + "\",");
                 fw.WriteLine($"        \"app_name\": \"{appName}\",");
@@ -692,6 +698,7 @@ namespace RPADesktopActivityMonitor
                     fw.WriteLine("    {");
                     fw.WriteLine("        \"type\": \"record\",");
                     fw.WriteLine("        \"origin\": \"desktop\",");
+                    fw.WriteLine("        \"description\": \"Keypress\",");
                     fw.WriteLine("        \"actionType\":\"" + strs[0] + "\",");
                     fw.WriteLine("        \"value\": \"" + Filter(strs[i], cased) + "\",");
                     fw.WriteLine($"        \"app_name\": \"{appName}\",");
@@ -725,6 +732,7 @@ namespace RPADesktopActivityMonitor
                 fw.WriteLine("    {");
                 fw.WriteLine("        \"type\": \"record\",");
                 fw.WriteLine("        \"origin\": \"desktop\",");
+                fw.WriteLine("        \"description\": \"Keyboard Shortcut\",");
                 fw.WriteLine("        \"actionType\":\"" + "kbd_shortcut" + "\",");
                 fw.WriteLine($"        \"pageScreenshot\": \"{scr}\",");
                 fw.Write("        \"value\": [\"" + Filter(strs[1], cased));
@@ -751,7 +759,9 @@ namespace RPADesktopActivityMonitor
             fw.WriteLine("    {");
             fw.WriteLine("        \"type\": \"record\",");
             fw.WriteLine("        \"origin\": \"desktop\",");
-            fw.WriteLine("        \"actionType\":\"lclick\",");
+            fw.WriteLine("        \"description\": \"Click\",");
+            fw.WriteLine("        \"selectorType\": \"imgSelector\",");
+            fw.WriteLine("        \"actionType\":\"click\",");
             fw.WriteLine($"        \"image\": \"{img}\",");
             fw.WriteLine($"        \"pageScreenshot\": \"{scr}\",");
             fw.WriteLine($"        \"app_name\": \"{appName}\",");
@@ -789,29 +799,35 @@ namespace RPADesktopActivityMonitor
                 Thread.Sleep(10000);
             }
             var prejson = File.ReadAllText(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @".\Temp\mn926.dat"));
-            File.AppendAllText(@"C:\Users\Admin\AppData\Local\Temp\dump.txt", $"File porsi!{Environment.NewLine}");
+            //File.AppendAllText(@"C:\Users\Techforce\AppData\Local\Temp\dump.txt", $"File porsi!{Environment.NewLine}");
             var desktopRecordArray = JsonConvert.DeserializeObject<dynamic[]>(prejson);
-            File.AppendAllText(@"C:\Users\Admin\AppData\Local\Temp\dump.txt", $"Json o convert korsi!{Environment.NewLine}");
+            //File.AppendAllText(@"C:\Users\Techforce\AppData\Local\Temp\dump.txt", $"Json o convert korsi!{Environment.NewLine}");
             for (int i = 0; i < desktopRecordArray.Length; i++)
             {
-                JValue tp = desktopRecordArray[i].actionType;
+                JValue tp = desktopRecordArray[i].actionType;                
                 if ((string)tp.Value == "kbd_shortcut")
                 {
                     JValue fi = desktopRecordArray[i].pageScreenshot;
                     desktopRecordArray[i].pageScreenshot = scrDict[Int32.Parse((string)fi.Value)];
                 }
-                else if ((string)tp.Value == "lclick" || (string)tp.Value == "rclick" || (string)tp.Value == "dbclick")
+                else if ((string)tp.Value == "click" || (string)tp.Value == "rclick" || (string)tp.Value == "dbclick")
                 {
                     JValue im = desktopRecordArray[i].image;
                     JValue fi = desktopRecordArray[i].pageScreenshot;
                     desktopRecordArray[i].image = imgDict[Int32.Parse((string)im.Value)];
                     desktopRecordArray[i].pageScreenshot = scrDict[Int32.Parse((string)fi.Value)];
                 }
+                else if ((string)tp.Value == "kp"){
+                    JValue vl = desktopRecordArray[i].value;
+                    if ((string)vl.Value == "return") {
+                        desktopRecordArray[i].value = "enter";
+                    }                    
+                }
             }
-            File.AppendAllText(@"C:\Users\Admin\AppData\Local\Temp\dump.txt", $"Kothin logic par korsi!{Environment.NewLine}");
+            //File.AppendAllText(@"C:\Users\Techforce\AppData\Local\Temp\dump.txt", $"Kothin logic par korsi!{Environment.NewLine}");
             File.Delete(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @".\Temp\mn926.dat"));
             File.WriteAllText(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @".\Temp\mn926.dat"), JsonConvert.SerializeObject(desktopRecordArray, Formatting.Indented));
-            File.AppendAllText(@"C:\Users\Admin\AppData\Local\Temp\dump.txt", $"Ei porjonto aschi!{Environment.NewLine}");
+            //File.AppendAllText(@"C:\Users\Techforce\AppData\Local\Temp\dump.txt", $"Ei porjonto aschi!{Environment.NewLine}");
             string outputDesktopPath = Path.Combine(path, "output.json");
             string outputBrowserPath = Path.Combine(path, "outputChrome.json");
 
@@ -832,34 +848,34 @@ namespace RPADesktopActivityMonitor
                 #endregion
                 Directory.Delete(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @"Images"), true);
             }
-            File.AppendAllText(@"C:\Users\Admin\AppData\Local\Temp\dump.txt", $"Ei porjonto clear!{Environment.NewLine}");
+            //File.AppendAllText(@"C:\Users\Techforce\AppData\Local\Temp\dump.txt", $"Ei porjonto clear!{Environment.NewLine}");
 
 
             string extnOUTcontents = JsonConvert.SerializeObject(executeoutputobject.data); //============================= ERROR HERE ===================================
                                                                      //============================ Line no. 827 ==================================
 
 
-            File.AppendAllText(@"C:\Users\Admin\AppData\Local\Temp\dump.txt", $"Ei je jhamela hoitse!{Environment.NewLine}");
+            //File.AppendAllText(@"C:\Users\Techforce\AppData\Local\Temp\dump.txt", $"Ei je jhamela hoitse!{Environment.NewLine}");
             using (StreamWriter writer = new StreamWriter(outputBrowserPath))
             {
                 writer.Write(extnOUTcontents);
             }
 
             ConversionResult resultset = ConversionScript.PrepareRpaPayload(outputDesktopPath, outputBrowserPath);
-            File.AppendAllText(@"C:\Users\Admin\AppData\Local\Temp\dump.txt", $"Convert o korsi!{Environment.NewLine}");
+            //File.AppendAllText(@"C:\Users\Techforce\AppData\Local\Temp\dump.txt", $"Convert o korsi!{Environment.NewLine}");
             Dictionary<string, object> payload = new Dictionary<string, object> {
                                             { "id", executeoutputobject.skillId.Value},
                                             { "type", "record"},
                                             { "actions", JsonConvert.DeserializeObject(resultset.Data)}
                                         };
-            File.AppendAllText(@"C:\Users\Admin\AppData\Local\Temp\dump.txt", $"Eita thik ase!{Environment.NewLine}");
+            //File.AppendAllText(@"C:\Users\Techforce\AppData\Local\Temp\dump.txt", $"Eita thik ase!{Environment.NewLine}");
             Dictionary<string, object> dictObj = new Dictionary<string, object> {
-                                            { "marderIndex",executeoutputobject.marderIndex.Value},
+                                            { "markerIndex",executeoutputobject.markerIndex.Value},
                                             { "skillId", executeoutputobject.skillId.Value },
                                             { "nodeId", executeoutputobject.nodeId.Value},
                                             { "payload",payload }
                                         };
-            File.AppendAllText(@"C:\Users\Admin\AppData\Local\Temp\dump.txt", $"Shondehojonok jayga par korsi!{Environment.NewLine}");
+            //File.AppendAllText(@"C:\Users\Techforce\AppData\Local\Temp\dump.txt", $"Shondehojonok jayga par korsi!{Environment.NewLine}");
             UploadRecordedEventsToSuper(dictObj);
         }
 
@@ -893,6 +909,11 @@ namespace RPADesktopActivityMonitor
             string filepath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData) + @"\Images\" + filename;
             if (!Directory.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @"Images"))) Directory.CreateDirectory(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @"Images"));
             Bitmap bmp = new Bitmap(Screen.PrimaryScreen.Bounds.Width, Screen.PrimaryScreen.Bounds.Height, PixelFormat.Format32bppArgb);
+            /*string tempPath = Path.GetTempPath();
+            string screenDimensionfile = $"screenDimensionfile.txt";
+            screenDimensionfile = Path.Combine(tempPath, screenDimensionfile);
+            File.AppendAllText(screenDimensionfile,  $"{Screen.PrimaryScreen.Bounds.Width} , {Screen.PrimaryScreen.Bounds.Height}{ Environment.NewLine}");*/
+            
             Graphics grp = Graphics.FromImage(bmp);
             grp.CopyFromScreen(Screen.PrimaryScreen.Bounds.X, Screen.PrimaryScreen.Bounds.Y, 0, 0, bmp.Size, CopyPixelOperation.SourceCopy);
             bmp.Save(filepath, ImageFormat.Jpeg);
