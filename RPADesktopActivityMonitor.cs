@@ -82,6 +82,7 @@ namespace RPADesktopActivityMonitor
         private static readonly RPADesktopActivityMonitor Instance = new RPADesktopActivityMonitor();   
 
         private string appName = "";
+        private string tempPath = Path.Combine(Path.GetTempPath(), $"dump.txt");        
         private int imgid = 0, scrid = 0;
         private Dictionary<int, string> scrDict = new Dictionary<int, string>();
         private Dictionary<int, string> imgDict = new Dictionary<int, string>();
@@ -325,6 +326,7 @@ namespace RPADesktopActivityMonitor
             fr = new StreamReader(fp);
             fw.AutoFlush = true;
             fw.WriteLine("[");
+            File.AppendAllText(tempPath, $"Logging started{Environment.NewLine}");
             Dispatcher.Invoke(() =>
             {
                 hook = SetHook(keyproc);
@@ -351,6 +353,7 @@ namespace RPADesktopActivityMonitor
                 fw.WriteLine("    },");
                 typed = "";
             }
+            //File.AppendAllText(tempPath, $"in stop logging {File.ReadAllText(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @".\Temp\mn926.dat"))}{Environment.NewLine}");
         }
 
         public void Run(RunOptions opts)
@@ -361,7 +364,7 @@ namespace RPADesktopActivityMonitor
                 string ExecutionInstruction = JsonConvert.SerializeObject(outputobject);
                 File.WriteAllText(extninFile, ExecutionInstruction);*/
 
-                Init();
+        Init();
                 startLogging();
                 Console.WriteLine("Activity Monitor (Desktop) Started");
 
@@ -380,11 +383,11 @@ namespace RPADesktopActivityMonitor
                             if (actionVar == "stopRecording")
                             {
                                 stopLogging();
-                                //File.AppendAllText(@"C:\Users\Techforce\AppData\Local\Temp\dump.txt", $"Finish e dhuktesi{Environment.NewLine}");
+                                File.AppendAllText(tempPath, $"Finish will be executed{Environment.NewLine}");
                                 finish(RuntimePath, executeoutputobject);
                                 Console.WriteLine("Activity Monitor (Desktop) Stopped");
                                 Dispose(); //CALL THIS IF YOU WANT THE PROGRAM TO EXIT
-                                //File.AppendAllText(@"C:\Users\Techforce\AppData\Local\Temp\dump.txt", $"Finished Completely{Environment.NewLine}");
+                                File.AppendAllText(tempPath, $"Finished Completely{Environment.NewLine}");
                             }
                         }
                     }
@@ -785,49 +788,60 @@ namespace RPADesktopActivityMonitor
             {
                 Thread.Sleep(100);
             }
-            fw.Write("]");
-            fp.Seek(-4, SeekOrigin.Current);
-            fw.Write(" ");
-            fp.Close();
-            if (!File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @".\Temp\mn926.dat")))
-            {
-                cancel();
-                return;
-            }            
-            if (imgDict.Values.Where(a => a == "").Count() > 0 || scrDict.Values.Where(a => a == "").Count() > 0)
-            {
-                Thread.Sleep(10000);
-            }
+            
+                fw.Write("]");
+                File.AppendAllText(tempPath, $"logging stopepd{Environment.NewLine}");
+                fp.Seek(-4, SeekOrigin.Current);
+                fw.Write(" ");
+                fp.Close();
+                if (!File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @".\Temp\mn926.dat")))
+                {
+                    File.AppendAllText(tempPath, $"mn926 is not there {Environment.NewLine}");
+                    cancel();
+                    return;
+                }
+                if (imgDict.Values.Where(a => a == "").Count() > 0 || scrDict.Values.Where(a => a == "").Count() > 0)
+                {
+                    Thread.Sleep(10000);
+                }
             var prejson = File.ReadAllText(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @".\Temp\mn926.dat"));
-            //File.AppendAllText(@"C:\Users\Techforce\AppData\Local\Temp\dump.txt", $"File porsi!{Environment.NewLine}");
-            var desktopRecordArray = JsonConvert.DeserializeObject<dynamic[]>(prejson);
-            //File.AppendAllText(@"C:\Users\Techforce\AppData\Local\Temp\dump.txt", $"Json o convert korsi!{Environment.NewLine}");
-            for (int i = 0; i < desktopRecordArray.Length; i++)
+            if (prejson.StartsWith("[") && prejson.EndsWith("]"))
             {
-                JValue tp = desktopRecordArray[i].actionType;                
-                if ((string)tp.Value == "kbd_shortcut")
+                File.AppendAllText(tempPath, $"mn926 file is read{Environment.NewLine}");            
+                var desktopRecordArray = JsonConvert.DeserializeObject<dynamic[]>(prejson);
+                File.AppendAllText(tempPath, $"string to json of mn926{Environment.NewLine}");
+                for (int i = 0; i < desktopRecordArray.Length; i++)
                 {
-                    JValue fi = desktopRecordArray[i].pageScreenshot;
-                    desktopRecordArray[i].pageScreenshot = scrDict[Int32.Parse((string)fi.Value)];
+                    JValue tp = desktopRecordArray[i].actionType;
+                    if ((string)tp.Value == "kbd_shortcut")
+                    {
+                        JValue fi = desktopRecordArray[i].pageScreenshot;
+                        desktopRecordArray[i].pageScreenshot = scrDict[Int32.Parse((string)fi.Value)];
+                    }
+                    else if ((string)tp.Value == "click" || (string)tp.Value == "rclick" || (string)tp.Value == "dbclick")
+                    {
+                        JValue im = desktopRecordArray[i].image;
+                        JValue fi = desktopRecordArray[i].pageScreenshot;
+                        desktopRecordArray[i].image = imgDict[Int32.Parse((string)im.Value)];
+                        desktopRecordArray[i].pageScreenshot = scrDict[Int32.Parse((string)fi.Value)];
+                    }
+                    else if ((string)tp.Value == "kp")
+                    {
+                        JValue vl = desktopRecordArray[i].value;
+                        if ((string)vl.Value == "return")
+                        {
+                            desktopRecordArray[i].value = "enter";
+                        }
+                    }
                 }
-                else if ((string)tp.Value == "click" || (string)tp.Value == "rclick" || (string)tp.Value == "dbclick")
-                {
-                    JValue im = desktopRecordArray[i].image;
-                    JValue fi = desktopRecordArray[i].pageScreenshot;
-                    desktopRecordArray[i].image = imgDict[Int32.Parse((string)im.Value)];
-                    desktopRecordArray[i].pageScreenshot = scrDict[Int32.Parse((string)fi.Value)];
-                }
-                else if ((string)tp.Value == "kp"){
-                    JValue vl = desktopRecordArray[i].value;
-                    if ((string)vl.Value == "return") {
-                        desktopRecordArray[i].value = "enter";
-                    }                    
-                }
+                File.AppendAllText(tempPath, $"image to url{Environment.NewLine}");
+                File.Delete(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @".\Temp\mn926.dat"));
+                File.WriteAllText(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @".\Temp\mn926.dat"), JsonConvert.SerializeObject(desktopRecordArray, Formatting.Indented));
             }
-            //File.AppendAllText(@"C:\Users\Techforce\AppData\Local\Temp\dump.txt", $"Kothin logic par korsi!{Environment.NewLine}");
-            File.Delete(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @".\Temp\mn926.dat"));
-            File.WriteAllText(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @".\Temp\mn926.dat"), JsonConvert.SerializeObject(desktopRecordArray, Formatting.Indented));
-            //File.AppendAllText(@"C:\Users\Techforce\AppData\Local\Temp\dump.txt", $"Ei porjonto aschi!{Environment.NewLine}");
+            else {
+                File.WriteAllText(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @".\Temp\mn926.dat"), "");
+            }
+            File.AppendAllText(tempPath, $"write total data to mn926{Environment.NewLine}");
             string outputDesktopPath = Path.Combine(path, "output.json");
             string outputBrowserPath = Path.Combine(path, "outputChrome.json");
 
@@ -848,34 +862,34 @@ namespace RPADesktopActivityMonitor
                 #endregion
                 Directory.Delete(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @"Images"), true);
             }
-            //File.AppendAllText(@"C:\Users\Techforce\AppData\Local\Temp\dump.txt", $"Ei porjonto clear!{Environment.NewLine}");
+            File.AppendAllText(tempPath, $"clear temp data{Environment.NewLine}");
 
 
             string extnOUTcontents = JsonConvert.SerializeObject(executeoutputobject.data); //============================= ERROR HERE ===================================
                                                                      //============================ Line no. 827 ==================================
 
 
-            //File.AppendAllText(@"C:\Users\Techforce\AppData\Local\Temp\dump.txt", $"Ei je jhamela hoitse!{Environment.NewLine}");
+            File.AppendAllText(tempPath, $"{Environment.NewLine}");
             using (StreamWriter writer = new StreamWriter(outputBrowserPath))
             {
                 writer.Write(extnOUTcontents);
             }
 
             ConversionResult resultset = ConversionScript.PrepareRpaPayload(outputDesktopPath, outputBrowserPath);
-            //File.AppendAllText(@"C:\Users\Techforce\AppData\Local\Temp\dump.txt", $"Convert o korsi!{Environment.NewLine}");
+            File.AppendAllText(tempPath, $"conversion to rpa json{Environment.NewLine}");
             Dictionary<string, object> payload = new Dictionary<string, object> {
                                             { "id", executeoutputobject.skillId.Value},
                                             { "type", "record"},
                                             { "actions", JsonConvert.DeserializeObject(resultset.Data)}
                                         };
-            //File.AppendAllText(@"C:\Users\Techforce\AppData\Local\Temp\dump.txt", $"Eita thik ase!{Environment.NewLine}");
+            File.AppendAllText(tempPath, $"payload{Environment.NewLine}");
             Dictionary<string, object> dictObj = new Dictionary<string, object> {
                                             { "markerIndex",executeoutputobject.markerIndex.Value},
                                             { "skillId", executeoutputobject.skillId.Value },
                                             { "nodeId", executeoutputobject.nodeId.Value},
                                             { "payload",payload }
                                         };
-            //File.AppendAllText(@"C:\Users\Techforce\AppData\Local\Temp\dump.txt", $"Shondehojonok jayga par korsi!{Environment.NewLine}");
+            File.AppendAllText(tempPath, $"ovrerall payload{Environment.NewLine}");
             UploadRecordedEventsToSuper(dictObj);
         }
 

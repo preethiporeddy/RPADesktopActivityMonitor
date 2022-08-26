@@ -10,6 +10,7 @@ namespace RPADesktopActivityMonitor
 {
     public static class ConversionScript
     {
+        private static readonly string tempPath = Path.Combine(Path.GetTempPath(), $"dump.txt");
         public static ConversionResult PrepareRpaPayload(string desktopRecord, string webRecord)
         {
             if (!(File.Exists(desktopRecord) && File.Exists(webRecord))) return new ConversionResult { Status = false, Data = "" };
@@ -23,8 +24,9 @@ namespace RPADesktopActivityMonitor
                     line += fs.ReadLine();
                 }
             }
+            File.AppendAllText(tempPath, $"{line} {Environment.NewLine}");
             desktopObject = JsonConvert.DeserializeObject(line);
-
+            File.AppendAllText(tempPath, $"{line} success {Environment.NewLine}");
             using (StreamReader fs = new StreamReader(new FileStream(webRecord, FileMode.Open)))
             {
                 line = "";
@@ -33,13 +35,21 @@ namespace RPADesktopActivityMonitor
                     line += fs.ReadLine();
                 }
             }
+            File.AppendAllText(tempPath, $"{line} {Environment.NewLine}");
             webObject = JsonConvert.DeserializeObject(line);
-            if (webObject != null)
+            File.AppendAllText(tempPath, $" web success {Environment.NewLine}");
+
+            if (webObject != null && desktopObject != null)
             {
                 foreach (var obj in webObject) desktopObject.Add(obj);
             }
+            else if (desktopObject == null) {
+                desktopObject = webObject;
+            }
 
+            File.AppendAllText(tempPath, $" for success {Environment.NewLine}");
             var masterObject = ((JArray)desktopObject).OrderBy(obj => (long)obj["timeStamp"]);
+            File.AppendAllText(tempPath, $" sort success {Environment.NewLine}");
 
             /*var jsonTree0 = new Dictionary<string, dynamic>();
             var jsonTree1 = new Dictionary<string, dynamic>();
