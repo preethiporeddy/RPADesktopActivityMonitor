@@ -23,7 +23,10 @@ namespace RPADesktopActivityMonitor
             else {
                 opts.StopRecording = true;
             }
-            RPADesktopActivityMonitor.GetInstance().Run(opts);            
+            RPADesktopActivityMonitor.GetInstance().Run(opts);
+            /*RpaPopupManagement.Instance.StartPopupServer();
+            RpaPopupManagement.Instance.InitPopupConnectivity();
+            RpaPopupManagement.Instance.RecordButtonCommand(true);*/
         }        
     }
 }

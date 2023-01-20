@@ -16,6 +16,7 @@ using System.IO.Pipes;
 using System.Text;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
+using System.Dynamic;
 
 namespace RPADesktopActivityMonitor
 {
@@ -79,7 +80,11 @@ namespace RPADesktopActivityMonitor
         public NamedPipeClientStream clientStream = new NamedPipeClientStream(".", "superextension", PipeDirection.In);
         private static dynamic configObject = JsonConvert.DeserializeObject(File.ReadAllText(Path.Combine(RuntimePath, "..\\..\\Configs\\extnHost_chrome\\config.json")));
         public static string refreshtoken = configObject.token;
+        public static bool IsAccessTokenStored = false;
+        public static string StoredAccessToken = "";
+        public static Task[] ToBeCompletedTasks;
         private static readonly RPADesktopActivityMonitor Instance = new RPADesktopActivityMonitor();   
+       // private static RpaPopupManagement popupInstance = new RpaPopupManagement();
 
         private string appName = "";
         private string tempPath = Path.Combine(Path.GetTempPath(), $"dump.txt");        
@@ -123,8 +128,69 @@ namespace RPADesktopActivityMonitor
             manualResetEvent.WaitOne();
             manualResetEvent.Dispose();
             Dispatcher = dispatcher;
-        }
 
+            //RpaPopupManagement.Instance.RecordButtonFeedbackReceived += DesktopInstance_RecordButtonFeedbackReceived;
+        }
+        private void DesktopInstance_RecordButtonFeedbackReceived()
+        {
+            RpaPopupManagement.Instance.RecordButtonCommand(false);
+            byte[] dataArr = new byte[clientStream.InBufferSize];
+            clientStream.Read(dataArr, 0, clientStream.InBufferSize);
+            var Execoutput = Encoding.UTF8.GetString(dataArr);
+            if (Execoutput.Length > 0)
+            {
+                dynamic executeoutputobject = JsonConvert.DeserializeObject(Execoutput);
+                if (!(Execoutput.ToLower().Contains("userActivity")))
+                {
+                    if (executeoutputobject != null)
+                    {
+                        if (PropertyExists(executeoutputobject, "action"))
+                        {
+                            string actionVar = executeoutputobject.action.Value;
+                            if (actionVar == "stopRecording")
+                            {
+                                Task.WaitAll(ToBeCompletedTasks);
+                                stopLogging();
+                                File.AppendAllText(tempPath, $"Finish will be executed{Environment.NewLine}");
+                                finish(RuntimePath, executeoutputobject);
+                                Console.WriteLine("Activity Monitor (Desktop) Stopped");
+                                Dispose(); //CALL THIS IF YOU WANT THE PROGRAM TO EXIT
+                                File.AppendAllText(tempPath, $"Finished Completely{Environment.NewLine}");
+                                clientStream.Dispose();
+                            }
+                        }
+                        else
+                        {
+                            clientStream.Read(dataArr, 0, clientStream.InBufferSize);
+                            Execoutput = Encoding.UTF8.GetString(dataArr);
+                            if (Execoutput.Length > 0)
+                            {
+                                executeoutputobject = JsonConvert.DeserializeObject(Execoutput);
+                                if (executeoutputobject != null)
+                                {
+                                    if (PropertyExists(executeoutputobject, "action"))
+                                    {
+                                        string actionVar = executeoutputobject.action.Value;
+                                        if (actionVar == "stopRecording")
+                                        {
+                                            Task.WaitAll(ToBeCompletedTasks);
+                                            stopLogging();
+                                            File.AppendAllText(tempPath, $"Finish will be executed{Environment.NewLine}");
+                                            finish(RuntimePath, executeoutputobject);
+                                            Console.WriteLine("Activity Monitor (Desktop) Stopped");
+                                            Dispose(); //CALL THIS IF YOU WANT THE PROGRAM TO EXIT
+                                            File.AppendAllText(tempPath, $"Finished Completely{Environment.NewLine}");
+                                            clientStream.Dispose();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+        }
         internal static RPADesktopActivityMonitor GetInstance() => Instance;
 
         private string Filter(string inp, bool cased = false)
@@ -326,6 +392,9 @@ namespace RPADesktopActivityMonitor
             fr = new StreamReader(fp);
             fw.AutoFlush = true;
             fw.WriteLine("[");
+            if (File.Exists(tempPath)){
+                File.Delete(tempPath);
+            }
             File.AppendAllText(tempPath, $"Logging started{Environment.NewLine}");
             Dispatcher.Invoke(() =>
             {
@@ -355,7 +424,17 @@ namespace RPADesktopActivityMonitor
             }
             //File.AppendAllText(tempPath, $"in stop logging {File.ReadAllText(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @".\Temp\mn926.dat"))}{Environment.NewLine}");
         }
-
+        public bool PropertyExists(dynamic obj, string name)
+        {
+            if (obj == null) return false;
+            if (obj is ExpandoObject)
+                return ((IDictionary<string, object>)obj).ContainsKey(name);
+            if (obj is IDictionary<string, object> dict1)
+                return dict1.ContainsKey(name);
+            if (obj is IDictionary<string, JToken> dict2)
+                return dict2.ContainsKey(name);
+            return obj.GetType().GetProperty(name) != null;
+        }
         public void Run(RunOptions opts)
         {
             if (opts.StartRecording)
@@ -363,8 +442,21 @@ namespace RPADesktopActivityMonitor
                 /*string extninFile = Path.Combine(RPA.RuntimePath, "../../Configs/extnHost_chrome/extn.in");
                 string ExecutionInstruction = JsonConvert.SerializeObject(outputobject);
                 File.WriteAllText(extninFile, ExecutionInstruction);*/
-
-        Init();
+                var procs = Process.GetProcessesByName("RPADesktopActivityMonitor");
+                if (procs.Length > 0)
+                {
+                    int currentProcessID = Process.GetCurrentProcess().Id;
+                    for (int i = 0; i < procs.Length; i++)
+                    {
+                        if (procs[i].Id == currentProcessID)
+                        { }
+                        else
+                        {
+                            procs[i].Kill();
+                        }
+                    }
+                }
+                Init();
                 startLogging();
                 Console.WriteLine("Activity Monitor (Desktop) Started");
 
@@ -377,21 +469,54 @@ namespace RPADesktopActivityMonitor
                     if (Execoutput.Length > 0)
                     {
                         dynamic executeoutputobject = JsonConvert.DeserializeObject(Execoutput);
-                        if (executeoutputobject != null)
+                        if (!(Execoutput.ToLower().Contains("userActivity")))
                         {
-                            string actionVar = executeoutputobject.action.Value;
-                            if (actionVar == "stopRecording")
+                            if (executeoutputobject != null)
                             {
-                                stopLogging();
-                                File.AppendAllText(tempPath, $"Finish will be executed{Environment.NewLine}");
-                                finish(RuntimePath, executeoutputobject);
-                                Console.WriteLine("Activity Monitor (Desktop) Stopped");
-                                Dispose(); //CALL THIS IF YOU WANT THE PROGRAM TO EXIT
-                                File.AppendAllText(tempPath, $"Finished Completely{Environment.NewLine}");
+                                if (PropertyExists(executeoutputobject, "action"))
+                                {
+                                    string actionVar = executeoutputobject.action.Value;
+                                    if (actionVar == "stopRecording")
+                                    {
+                                        stopLogging();
+                                        File.AppendAllText(tempPath, $"Finish will be executed{Environment.NewLine}");
+                                        finish(RuntimePath, executeoutputobject);
+                                        Console.WriteLine("Activity Monitor (Desktop) Stopped");
+                                        Dispose(); //CALL THIS IF YOU WANT THE PROGRAM TO EXIT
+                                        File.AppendAllText(tempPath, $"Finished Completely{Environment.NewLine}");
+                                        clientStream.Dispose();
+                                    }
+                                }
+                                else
+                                {
+                                    clientStream.Read(dataArr, 0, clientStream.InBufferSize);
+                                    Execoutput = Encoding.UTF8.GetString(dataArr);
+                                    if (Execoutput.Length > 0)
+                                    {
+                                        executeoutputobject = JsonConvert.DeserializeObject(Execoutput);
+                                        if (executeoutputobject != null)
+                                        {
+                                            if (PropertyExists(executeoutputobject, "action"))
+                                            {
+                                                string actionVar = executeoutputobject.action.Value;
+                                                if (actionVar == "stopRecording")
+                                                {
+                                                    stopLogging();
+                                                    File.AppendAllText(tempPath, $"Finish will be executed{Environment.NewLine}");
+                                                    finish(RuntimePath, executeoutputobject);
+                                                    Console.WriteLine("Activity Monitor (Desktop) Stopped");
+                                                    Dispose(); //CALL THIS IF YOU WANT THE PROGRAM TO EXIT
+                                                    File.AppendAllText(tempPath, $"Finished Completely{Environment.NewLine}");
+                                                    clientStream.Dispose();
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
-                    clientStream.Dispose();
+
 
                 });
             }
@@ -404,10 +529,10 @@ namespace RPADesktopActivityMonitor
             MultipartFormDataContent form = new MultipartFormDataContent(boundary);
             var file_bytes = File.ReadAllBytes(filename);
             form.Add(new ByteArrayContent(file_bytes, 0, file_bytes.Length), "file", filename);*/
-            var postUrl = new Uri("https://superapi.techforce.ai/botapi/draftSkills/extension/record");
+            var postUrl = new Uri("https://superapiqa.development.techforce.ai/botapi/draftSkills/extension/record");
             /*dynamic configObject = JsonConvert.DeserializeObject(File.ReadAllText(Path.Combine(RuntimePath, "../../Configs/extnHost_chrome/config.json")));
             string refreshtoken = configObject.token;*/
-            string accesstoken = GetAccessTokenFromRefreshToken(refreshtoken);//"eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJ0TXVIRlRmNjZYRlFGWEtPX3JlVF96ajlVTkRyLW1wX0JYQnpZSHZsYVd3In0.eyJleHAiOjE2NTc2MDE5OTAsImlhdCI6MTY0OTgyNTk5MCwiYXV0aF90aW1lIjoxNjQ5NzU1Njk2LCJqdGkiOiI4MjFiZmZkYS1jYjJmLTRkZGYtYTY0My1lOWU0ZjA3ZjgxYTUiLCJpc3MiOiJodHRwczovL2VtY2F1dGhhd3MudGVjaGZvcmNlLmFpL2F1dGgvcmVhbG1zL3RlY2hmb3JjZSIsImF1ZCI6ImFjY291bnQiLCJzdWIiOiI1NzViNDJjYi01YmViLTQ1NDgtOTU0OC02NGU5NWJmMDk5NTYiLCJ0eXAiOiJCZWFyZXIiLCJhenAiOiJzdXBlci1leHRlbnNpb24iLCJub25jZSI6ImIzNmViODRlLTk5Y2UtNDUwYS04YmZiLTEzN2NjMGUxYWMzNCIsInNlc3Npb25fc3RhdGUiOiIyN2E5M2EzZi1jY2NmLTRjYzYtOTAxNy02N2YwOGU2ZmE2NTEiLCJhY3IiOiIwIiwiYWxsb3dlZC1vcmlnaW5zIjpbImNocm9tZS1leHRlbnNpb246Ly9sbmdocGlpZXBmYmdnY2trb2dtam1wYmhubmFkbG1lcCIsImNocm9tZS1leHRlbnNpb246Ly9ka2FrZmpsbG9lZGNtam5na2lvbWdtZWdmY2ZnbWdvZiIsImNocm9tZS1leHRlbnNpb246Ly9scGNkaWlpbmJnbm1wbmliYWFram9kYWxnaHBwaGtrYy8qIiwiY2hyb21lLWV4dGVuc2lvbjovL2duYWlnZmFoZmxkbGpoZGhnbGFqb2JoaGhvcG9tbG9nIiwiY2hyb21lLWV4dGVuc2lvbjovL2lrYmNnZm1qa21maWptZmtvbGtpYWptb2Znam9qbG5oIiwiY2hyb21lLWV4dGVuc2lvbjovL2RkaGhsb25pZGFma2xoY2dvb2drZWVjbmZsZ2dqZGVlIiwiY2hyb21lLWV4dGVuc2lvbjovL25qamhiZ2lwaHBvZGNnY2RraWtrb2RwcG5oYmRpYXBtIiwiY2hyb21lLWV4dGVuc2lvbjovL25oY2JlZWxhbWtncG5oYWxiYWNtaWthYmNtZGRpZWNoIiwiY2hyb21lLWV4dGVuc2lvbjovL2xicGhsYWpncGpkbGRlaWNvaG5lZ2FrYm1mZmZoY2ZlIiwiY2hyb21lLWV4dGVuc2lvbjovL21jZmdna2RmZGRuZGtsY2NoYWhsZ2pjZ2Vrb2xnYW9jIiwiY2hyb21lLWV4dGVuc2lvbjovL21vYWhwZW5na2tmb25qYW5nZGlvYWtiZ2xtbmVnbWdtIiwiY2hyb21lLWV4dGVuc2lvbjovL2hvcG9ma2Nrb2pnaG9qZG5wcGNnamRiZGtoaWtsbmNqIiwiY2hyb21lLWV4dGVuc2lvbjovL2ljZWVmZWFrb2tnZGlwam1oZWVlZmhqZWhubGRpb29qIiwiY2hyb21lLWV4dGVuc2lvbjovL3BubmNibG1wZGlrbmxvbXBra2Nha2pvYWhwcGtmZGVqIiwiY2hyb21lLWV4dGVuc2lvbjovL2NpZGRwcGhwaWtsZ2pnZmRkbGduaGZpYmJjb2xubGxrIiwiY2hyb21lLWV4dGVuc2lvbjovL2JmbmVqaG1vb2Nsa2JmYW5sYWluZGpna2RhbGxpa21qIiwiY2hyb21lLWV4dGVuc2lvbjovL21pamFibmlmbmRjb2VnbWttYWhmYWNjZWJjaWdtcGFuIiwiY2hyb21lLWV4dGVuc2lvbjovL2pqaGxkbWpoYm5mampwYmxqam9kZWlqbHBsb2ZqYm9lIiwiY2hyb21lLWV4dGVuc2lvbjovL2dwZG5tZm9hZG5saGlqZGljZWNpbWtsb21wamljaWdtIl0sInJlYWxtX2FjY2VzcyI6eyJyb2xlcyI6WyJvZmZsaW5lX2FjY2VzcyIsInVtYV9hdXRob3JpemF0aW9uIl19LCJyZXNvdXJjZV9hY2Nlc3MiOnsiYWNjb3VudCI6eyJyb2xlcyI6WyJtYW5hZ2UtYWNjb3VudCIsIm1hbmFnZS1hY2NvdW50LWxpbmtzIiwidmlldy1wcm9maWxlIl19fSwic2NvcGUiOiJvcGVuaWQgcHJvZmlsZSBlbWFpbCIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJuYW1lIjoiUHJlZXRoaSBQb3JlZGR5IiwicHJlZmVycmVkX3VzZXJuYW1lIjoic3BvcmVkZHlAdGVjaGZvcmNlLmFpIiwiZ2l2ZW5fbmFtZSI6IlByZWV0aGkiLCJmYW1pbHlfbmFtZSI6IlBvcmVkZHkiLCJlbWFpbCI6InNwb3JlZGR5QHRlY2hmb3JjZS5haSJ9.DrbZZyGvE_tV4C_GZHc-QxfbSYS87bD27-X37v8rg4le-cOsaenYyk6xvKOXlu87o5mTSd1pjDwJ21sxtBxdSMJg7PyoT3FgYOfmqccQK-JUwKW7EGXayYsMj5HptdNl5E6DLB95Xh7kFstUO65QZ5IDyMp862fAFLvkK7ATe8D4r3QYh3b6jvkmMXSA-ZmfIwMbG90OFVLeoSDdPKLFe95yvVZXFvawI_CXB0vQU13EW4XJ6wfBuZh0RMVW0DZ0yUlclQ1nt9_G5blMowtJ4Dgv5DLL9_Yhz5BmqS0yQuN_YbnY3iLcGXWtW9NQSdFbVQIQ-JGZY7g6ddN_13QpAg";
+            string accesstoken = GetStoredAccessToken(refreshtoken);//"eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJ0TXVIRlRmNjZYRlFGWEtPX3JlVF96ajlVTkRyLW1wX0JYQnpZSHZsYVd3In0.eyJleHAiOjE2NTc2MDE5OTAsImlhdCI6MTY0OTgyNTk5MCwiYXV0aF90aW1lIjoxNjQ5NzU1Njk2LCJqdGkiOiI4MjFiZmZkYS1jYjJmLTRkZGYtYTY0My1lOWU0ZjA3ZjgxYTUiLCJpc3MiOiJodHRwczovL2VtY2F1dGhhd3MudGVjaGZvcmNlLmFpL2F1dGgvcmVhbG1zL3RlY2hmb3JjZSIsImF1ZCI6ImFjY291bnQiLCJzdWIiOiI1NzViNDJjYi01YmViLTQ1NDgtOTU0OC02NGU5NWJmMDk5NTYiLCJ0eXAiOiJCZWFyZXIiLCJhenAiOiJzdXBlci1leHRlbnNpb24iLCJub25jZSI6ImIzNmViODRlLTk5Y2UtNDUwYS04YmZiLTEzN2NjMGUxYWMzNCIsInNlc3Npb25fc3RhdGUiOiIyN2E5M2EzZi1jY2NmLTRjYzYtOTAxNy02N2YwOGU2ZmE2NTEiLCJhY3IiOiIwIiwiYWxsb3dlZC1vcmlnaW5zIjpbImNocm9tZS1leHRlbnNpb246Ly9sbmdocGlpZXBmYmdnY2trb2dtam1wYmhubmFkbG1lcCIsImNocm9tZS1leHRlbnNpb246Ly9ka2FrZmpsbG9lZGNtam5na2lvbWdtZWdmY2ZnbWdvZiIsImNocm9tZS1leHRlbnNpb246Ly9scGNkaWlpbmJnbm1wbmliYWFram9kYWxnaHBwaGtrYy8qIiwiY2hyb21lLWV4dGVuc2lvbjovL2duYWlnZmFoZmxkbGpoZGhnbGFqb2JoaGhvcG9tbG9nIiwiY2hyb21lLWV4dGVuc2lvbjovL2lrYmNnZm1qa21maWptZmtvbGtpYWptb2Znam9qbG5oIiwiY2hyb21lLWV4dGVuc2lvbjovL2RkaGhsb25pZGFma2xoY2dvb2drZWVjbmZsZ2dqZGVlIiwiY2hyb21lLWV4dGVuc2lvbjovL25qamhiZ2lwaHBvZGNnY2RraWtrb2RwcG5oYmRpYXBtIiwiY2hyb21lLWV4dGVuc2lvbjovL25oY2JlZWxhbWtncG5oYWxiYWNtaWthYmNtZGRpZWNoIiwiY2hyb21lLWV4dGVuc2lvbjovL2xicGhsYWpncGpkbGRlaWNvaG5lZ2FrYm1mZmZoY2ZlIiwiY2hyb21lLWV4dGVuc2lvbjovL21jZmdna2RmZGRuZGtsY2NoYWhsZ2pjZ2Vrb2xnYW9jIiwiY2hyb21lLWV4dGVuc2lvbjovL21vYWhwZW5na2tmb25qYW5nZGlvYWtiZ2xtbmVnbWdtIiwiY2hyb21lLWV4dGVuc2lvbjovL2hvcG9ma2Nrb2pnaG9qZG5wcGNnamRiZGtoaWtsbmNqIiwiY2hyb21lLWV4dGVuc2lvbjovL2ljZWVmZWFrb2tnZGlwam1oZWVlZmhqZWhubGRpb29qIiwiY2hyb21lLWV4dGVuc2lvbjovL3BubmNibG1wZGlrbmxvbXBra2Nha2pvYWhwcGtmZGVqIiwiY2hyb21lLWV4dGVuc2lvbjovL2NpZGRwcGhwaWtsZ2pnZmRkbGduaGZpYmJjb2xubGxrIiwiY2hyb21lLWV4dGVuc2lvbjovL2JmbmVqaG1vb2Nsa2JmYW5sYWluZGpna2RhbGxpa21qIiwiY2hyb21lLWV4dGVuc2lvbjovL21pamFibmlmbmRjb2VnbWttYWhmYWNjZWJjaWdtcGFuIiwiY2hyb21lLWV4dGVuc2lvbjovL2pqaGxkbWpoYm5mampwYmxqam9kZWlqbHBsb2ZqYm9lIiwiY2hyb21lLWV4dGVuc2lvbjovL2dwZG5tZm9hZG5saGlqZGljZWNpbWtsb21wamljaWdtIl0sInJlYWxtX2FjY2VzcyI6eyJyb2xlcyI6WyJvZmZsaW5lX2FjY2VzcyIsInVtYV9hdXRob3JpemF0aW9uIl19LCJyZXNvdXJjZV9hY2Nlc3MiOnsiYWNjb3VudCI6eyJyb2xlcyI6WyJtYW5hZ2UtYWNjb3VudCIsIm1hbmFnZS1hY2NvdW50LWxpbmtzIiwidmlldy1wcm9maWxlIl19fSwic2NvcGUiOiJvcGVuaWQgcHJvZmlsZSBlbWFpbCIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJuYW1lIjoiUHJlZXRoaSBQb3JlZGR5IiwicHJlZmVycmVkX3VzZXJuYW1lIjoic3BvcmVkZHlAdGVjaGZvcmNlLmFpIiwiZ2l2ZW5fbmFtZSI6IlByZWV0aGkiLCJmYW1pbHlfbmFtZSI6IlBvcmVkZHkiLCJlbWFpbCI6InNwb3JlZGR5QHRlY2hmb3JjZS5haSJ9.DrbZZyGvE_tV4C_GZHc-QxfbSYS87bD27-X37v8rg4le-cOsaenYyk6xvKOXlu87o5mTSd1pjDwJ21sxtBxdSMJg7PyoT3FgYOfmqccQK-JUwKW7EGXayYsMj5HptdNl5E6DLB95Xh7kFstUO65QZ5IDyMp862fAFLvkK7ATe8D4r3QYh3b6jvkmMXSA-ZmfIwMbG90OFVLeoSDdPKLFe95yvVZXFvawI_CXB0vQU13EW4XJ6wfBuZh0RMVW0DZ0yUlclQ1nt9_G5blMowtJ4Dgv5DLL9_Yhz5BmqS0yQuN_YbnY3iLcGXWtW9NQSdFbVQIQ-JGZY7g6ddN_13QpAg";
             httpClient.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", string.Format("Bearer {0}", accesstoken));
             /* var boundaryParameter = form.Headers.ContentType
                                          .Parameters.Single(p => p.Name == "boundary");
@@ -417,6 +542,8 @@ namespace RPADesktopActivityMonitor
             HttpResponseMessage response = httpClient.PostAsync(postUrl, content).Result;
             response.EnsureSuccessStatusCode();
             httpClient.Dispose();
+            File.AppendAllText(tempPath, $"{response.EnsureSuccessStatusCode()}--{Environment.NewLine}");
+            File.AppendAllText(tempPath, $"uploaded recorded events to super{Environment.NewLine}");
         }
 
         private IntPtr SetHook(LowLevelKeyboardProc proc)
@@ -788,26 +915,27 @@ namespace RPADesktopActivityMonitor
             {
                 Thread.Sleep(100);
             }
+
+            fw.Write("]");
+            File.AppendAllText(tempPath, $"logging stopped{Environment.NewLine}");
             
-                fw.Write("]");
-                File.AppendAllText(tempPath, $"logging stopepd{Environment.NewLine}");
-                fp.Seek(-4, SeekOrigin.Current);
-                fw.Write(" ");
-                fp.Close();
-                if (!File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @".\Temp\mn926.dat")))
-                {
-                    File.AppendAllText(tempPath, $"mn926 is not there {Environment.NewLine}");
-                    cancel();
-                    return;
-                }
-                if (imgDict.Values.Where(a => a == "").Count() > 0 || scrDict.Values.Where(a => a == "").Count() > 0)
-                {
-                    Thread.Sleep(10000);
-                }
+            fp.Seek(-4, SeekOrigin.Current);
+            fw.Write(" ");
+            fp.Close();
+            if (!File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @".\Temp\mn926.dat")))
+            {
+                File.AppendAllText(tempPath, $"mn926 is not there {Environment.NewLine}");
+                cancel();
+                return;
+            }
+            if (imgDict.Values.Where(a => a == "").Count() > 0 || scrDict.Values.Where(a => a == "").Count() > 0)
+            {
+                Thread.Sleep(10000);
+            }
             var prejson = File.ReadAllText(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @".\Temp\mn926.dat"));
             if (prejson.StartsWith("[") && prejson.EndsWith("]"))
             {
-                File.AppendAllText(tempPath, $"mn926 file is read{Environment.NewLine}");            
+                File.AppendAllText(tempPath, $"mn926 file is read{Environment.NewLine}");
                 var desktopRecordArray = JsonConvert.DeserializeObject<dynamic[]>(prejson);
                 File.AppendAllText(tempPath, $"string to json of mn926{Environment.NewLine}");
                 for (int i = 0; i < desktopRecordArray.Length; i++)
@@ -838,7 +966,8 @@ namespace RPADesktopActivityMonitor
                 File.Delete(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @".\Temp\mn926.dat"));
                 File.WriteAllText(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @".\Temp\mn926.dat"), JsonConvert.SerializeObject(desktopRecordArray, Formatting.Indented));
             }
-            else {
+            else
+            {
                 File.WriteAllText(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @".\Temp\mn926.dat"), "");
             }
             File.AppendAllText(tempPath, $"write total data to mn926{Environment.NewLine}");
@@ -866,7 +995,7 @@ namespace RPADesktopActivityMonitor
 
 
             string extnOUTcontents = JsonConvert.SerializeObject(executeoutputobject.data); //============================= ERROR HERE ===================================
-                                                                     //============================ Line no. 827 ==================================
+                                                                                            //============================ Line no. 827 ==================================
 
 
             File.AppendAllText(tempPath, $"{Environment.NewLine}");
@@ -942,27 +1071,30 @@ namespace RPADesktopActivityMonitor
             MultipartFormDataContent form = new MultipartFormDataContent(boundary);
             var file_bytes = File.ReadAllBytes(filename);
             form.Add(new ByteArrayContent(file_bytes, 0, file_bytes.Length), "file", filename);
-            var postUrl = new Uri("https://superapi.techforce.ai/botapi/upload");
+            var postUrl = new Uri("https://superapiqa.development.techforce.ai/botapi/upload");
             dynamic configObject = JsonConvert.DeserializeObject(File.ReadAllText(Path.Combine(RuntimePath, "../../Configs/extnHost_chrome/config.json")));
             string refreshtoken = configObject.token;
-            string accesstoken = GetAccessTokenFromRefreshToken(refreshtoken);//"eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJ0TXVIRlRmNjZYRlFGWEtPX3JlVF96ajlVTkRyLW1wX0JYQnpZSHZsYVd3In0.eyJleHAiOjE2NTc2MDE5OTAsImlhdCI6MTY0OTgyNTk5MCwiYXV0aF90aW1lIjoxNjQ5NzU1Njk2LCJqdGkiOiI4MjFiZmZkYS1jYjJmLTRkZGYtYTY0My1lOWU0ZjA3ZjgxYTUiLCJpc3MiOiJodHRwczovL2VtY2F1dGhhd3MudGVjaGZvcmNlLmFpL2F1dGgvcmVhbG1zL3RlY2hmb3JjZSIsImF1ZCI6ImFjY291bnQiLCJzdWIiOiI1NzViNDJjYi01YmViLTQ1NDgtOTU0OC02NGU5NWJmMDk5NTYiLCJ0eXAiOiJCZWFyZXIiLCJhenAiOiJzdXBlci1leHRlbnNpb24iLCJub25jZSI6ImIzNmViODRlLTk5Y2UtNDUwYS04YmZiLTEzN2NjMGUxYWMzNCIsInNlc3Npb25fc3RhdGUiOiIyN2E5M2EzZi1jY2NmLTRjYzYtOTAxNy02N2YwOGU2ZmE2NTEiLCJhY3IiOiIwIiwiYWxsb3dlZC1vcmlnaW5zIjpbImNocm9tZS1leHRlbnNpb246Ly9sbmdocGlpZXBmYmdnY2trb2dtam1wYmhubmFkbG1lcCIsImNocm9tZS1leHRlbnNpb246Ly9ka2FrZmpsbG9lZGNtam5na2lvbWdtZWdmY2ZnbWdvZiIsImNocm9tZS1leHRlbnNpb246Ly9scGNkaWlpbmJnbm1wbmliYWFram9kYWxnaHBwaGtrYy8qIiwiY2hyb21lLWV4dGVuc2lvbjovL2duYWlnZmFoZmxkbGpoZGhnbGFqb2JoaGhvcG9tbG9nIiwiY2hyb21lLWV4dGVuc2lvbjovL2lrYmNnZm1qa21maWptZmtvbGtpYWptb2Znam9qbG5oIiwiY2hyb21lLWV4dGVuc2lvbjovL2RkaGhsb25pZGFma2xoY2dvb2drZWVjbmZsZ2dqZGVlIiwiY2hyb21lLWV4dGVuc2lvbjovL25qamhiZ2lwaHBvZGNnY2RraWtrb2RwcG5oYmRpYXBtIiwiY2hyb21lLWV4dGVuc2lvbjovL25oY2JlZWxhbWtncG5oYWxiYWNtaWthYmNtZGRpZWNoIiwiY2hyb21lLWV4dGVuc2lvbjovL2xicGhsYWpncGpkbGRlaWNvaG5lZ2FrYm1mZmZoY2ZlIiwiY2hyb21lLWV4dGVuc2lvbjovL21jZmdna2RmZGRuZGtsY2NoYWhsZ2pjZ2Vrb2xnYW9jIiwiY2hyb21lLWV4dGVuc2lvbjovL21vYWhwZW5na2tmb25qYW5nZGlvYWtiZ2xtbmVnbWdtIiwiY2hyb21lLWV4dGVuc2lvbjovL2hvcG9ma2Nrb2pnaG9qZG5wcGNnamRiZGtoaWtsbmNqIiwiY2hyb21lLWV4dGVuc2lvbjovL2ljZWVmZWFrb2tnZGlwam1oZWVlZmhqZWhubGRpb29qIiwiY2hyb21lLWV4dGVuc2lvbjovL3BubmNibG1wZGlrbmxvbXBra2Nha2pvYWhwcGtmZGVqIiwiY2hyb21lLWV4dGVuc2lvbjovL2NpZGRwcGhwaWtsZ2pnZmRkbGduaGZpYmJjb2xubGxrIiwiY2hyb21lLWV4dGVuc2lvbjovL2JmbmVqaG1vb2Nsa2JmYW5sYWluZGpna2RhbGxpa21qIiwiY2hyb21lLWV4dGVuc2lvbjovL21pamFibmlmbmRjb2VnbWttYWhmYWNjZWJjaWdtcGFuIiwiY2hyb21lLWV4dGVuc2lvbjovL2pqaGxkbWpoYm5mampwYmxqam9kZWlqbHBsb2ZqYm9lIiwiY2hyb21lLWV4dGVuc2lvbjovL2dwZG5tZm9hZG5saGlqZGljZWNpbWtsb21wamljaWdtIl0sInJlYWxtX2FjY2VzcyI6eyJyb2xlcyI6WyJvZmZsaW5lX2FjY2VzcyIsInVtYV9hdXRob3JpemF0aW9uIl19LCJyZXNvdXJjZV9hY2Nlc3MiOnsiYWNjb3VudCI6eyJyb2xlcyI6WyJtYW5hZ2UtYWNjb3VudCIsIm1hbmFnZS1hY2NvdW50LWxpbmtzIiwidmlldy1wcm9maWxlIl19fSwic2NvcGUiOiJvcGVuaWQgcHJvZmlsZSBlbWFpbCIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJuYW1lIjoiUHJlZXRoaSBQb3JlZGR5IiwicHJlZmVycmVkX3VzZXJuYW1lIjoic3BvcmVkZHlAdGVjaGZvcmNlLmFpIiwiZ2l2ZW5fbmFtZSI6IlByZWV0aGkiLCJmYW1pbHlfbmFtZSI6IlBvcmVkZHkiLCJlbWFpbCI6InNwb3JlZGR5QHRlY2hmb3JjZS5haSJ9.DrbZZyGvE_tV4C_GZHc-QxfbSYS87bD27-X37v8rg4le-cOsaenYyk6xvKOXlu87o5mTSd1pjDwJ21sxtBxdSMJg7PyoT3FgYOfmqccQK-JUwKW7EGXayYsMj5HptdNl5E6DLB95Xh7kFstUO65QZ5IDyMp862fAFLvkK7ATe8D4r3QYh3b6jvkmMXSA-ZmfIwMbG90OFVLeoSDdPKLFe95yvVZXFvawI_CXB0vQU13EW4XJ6wfBuZh0RMVW0DZ0yUlclQ1nt9_G5blMowtJ4Dgv5DLL9_Yhz5BmqS0yQuN_YbnY3iLcGXWtW9NQSdFbVQIQ-JGZY7g6ddN_13QpAg";
+            string accesstoken = GetStoredAccessToken(refreshtoken);//"eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJ0TXVIRlRmNjZYRlFGWEtPX3JlVF96ajlVTkRyLW1wX0JYQnpZSHZsYVd3In0.eyJleHAiOjE2NTc2MDE5OTAsImlhdCI6MTY0OTgyNTk5MCwiYXV0aF90aW1lIjoxNjQ5NzU1Njk2LCJqdGkiOiI4MjFiZmZkYS1jYjJmLTRkZGYtYTY0My1lOWU0ZjA3ZjgxYTUiLCJpc3MiOiJodHRwczovL2VtY2F1dGhhd3MudGVjaGZvcmNlLmFpL2F1dGgvcmVhbG1zL3RlY2hmb3JjZSIsImF1ZCI6ImFjY291bnQiLCJzdWIiOiI1NzViNDJjYi01YmViLTQ1NDgtOTU0OC02NGU5NWJmMDk5NTYiLCJ0eXAiOiJCZWFyZXIiLCJhenAiOiJzdXBlci1leHRlbnNpb24iLCJub25jZSI6ImIzNmViODRlLTk5Y2UtNDUwYS04YmZiLTEzN2NjMGUxYWMzNCIsInNlc3Npb25fc3RhdGUiOiIyN2E5M2EzZi1jY2NmLTRjYzYtOTAxNy02N2YwOGU2ZmE2NTEiLCJhY3IiOiIwIiwiYWxsb3dlZC1vcmlnaW5zIjpbImNocm9tZS1leHRlbnNpb246Ly9sbmdocGlpZXBmYmdnY2trb2dtam1wYmhubmFkbG1lcCIsImNocm9tZS1leHRlbnNpb246Ly9ka2FrZmpsbG9lZGNtam5na2lvbWdtZWdmY2ZnbWdvZiIsImNocm9tZS1leHRlbnNpb246Ly9scGNkaWlpbmJnbm1wbmliYWFram9kYWxnaHBwaGtrYy8qIiwiY2hyb21lLWV4dGVuc2lvbjovL2duYWlnZmFoZmxkbGpoZGhnbGFqb2JoaGhvcG9tbG9nIiwiY2hyb21lLWV4dGVuc2lvbjovL2lrYmNnZm1qa21maWptZmtvbGtpYWptb2Znam9qbG5oIiwiY2hyb21lLWV4dGVuc2lvbjovL2RkaGhsb25pZGFma2xoY2dvb2drZWVjbmZsZ2dqZGVlIiwiY2hyb21lLWV4dGVuc2lvbjovL25qamhiZ2lwaHBvZGNnY2RraWtrb2RwcG5oYmRpYXBtIiwiY2hyb21lLWV4dGVuc2lvbjovL25oY2JlZWxhbWtncG5oYWxiYWNtaWthYmNtZGRpZWNoIiwiY2hyb21lLWV4dGVuc2lvbjovL2xicGhsYWpncGpkbGRlaWNvaG5lZ2FrYm1mZmZoY2ZlIiwiY2hyb21lLWV4dGVuc2lvbjovL21jZmdna2RmZGRuZGtsY2NoYWhsZ2pjZ2Vrb2xnYW9jIiwiY2hyb21lLWV4dGVuc2lvbjovL21vYWhwZW5na2tmb25qYW5nZGlvYWtiZ2xtbmVnbWdtIiwiY2hyb21lLWV4dGVuc2lvbjovL2hvcG9ma2Nrb2pnaG9qZG5wcGNnamRiZGtoaWtsbmNqIiwiY2hyb21lLWV4dGVuc2lvbjovL2ljZWVmZWFrb2tnZGlwam1oZWVlZmhqZWhubGRpb29qIiwiY2hyb21lLWV4dGVuc2lvbjovL3BubmNibG1wZGlrbmxvbXBra2Nha2pvYWhwcGtmZGVqIiwiY2hyb21lLWV4dGVuc2lvbjovL2NpZGRwcGhwaWtsZ2pnZmRkbGduaGZpYmJjb2xubGxrIiwiY2hyb21lLWV4dGVuc2lvbjovL2JmbmVqaG1vb2Nsa2JmYW5sYWluZGpna2RhbGxpa21qIiwiY2hyb21lLWV4dGVuc2lvbjovL21pamFibmlmbmRjb2VnbWttYWhmYWNjZWJjaWdtcGFuIiwiY2hyb21lLWV4dGVuc2lvbjovL2pqaGxkbWpoYm5mampwYmxqam9kZWlqbHBsb2ZqYm9lIiwiY2hyb21lLWV4dGVuc2lvbjovL2dwZG5tZm9hZG5saGlqZGljZWNpbWtsb21wamljaWdtIl0sInJlYWxtX2FjY2VzcyI6eyJyb2xlcyI6WyJvZmZsaW5lX2FjY2VzcyIsInVtYV9hdXRob3JpemF0aW9uIl19LCJyZXNvdXJjZV9hY2Nlc3MiOnsiYWNjb3VudCI6eyJyb2xlcyI6WyJtYW5hZ2UtYWNjb3VudCIsIm1hbmFnZS1hY2NvdW50LWxpbmtzIiwidmlldy1wcm9maWxlIl19fSwic2NvcGUiOiJvcGVuaWQgcHJvZmlsZSBlbWFpbCIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJuYW1lIjoiUHJlZXRoaSBQb3JlZGR5IiwicHJlZmVycmVkX3VzZXJuYW1lIjoic3BvcmVkZHlAdGVjaGZvcmNlLmFpIiwiZ2l2ZW5fbmFtZSI6IlByZWV0aGkiLCJmYW1pbHlfbmFtZSI6IlBvcmVkZHkiLCJlbWFpbCI6InNwb3JlZGR5QHRlY2hmb3JjZS5haSJ9.DrbZZyGvE_tV4C_GZHc-QxfbSYS87bD27-X37v8rg4le-cOsaenYyk6xvKOXlu87o5mTSd1pjDwJ21sxtBxdSMJg7PyoT3FgYOfmqccQK-JUwKW7EGXayYsMj5HptdNl5E6DLB95Xh7kFstUO65QZ5IDyMp862fAFLvkK7ATe8D4r3QYh3b6jvkmMXSA-ZmfIwMbG90OFVLeoSDdPKLFe95yvVZXFvawI_CXB0vQU13EW4XJ6wfBuZh0RMVW0DZ0yUlclQ1nt9_G5blMowtJ4Dgv5DLL9_Yhz5BmqS0yQuN_YbnY3iLcGXWtW9NQSdFbVQIQ-JGZY7g6ddN_13QpAg";
             httpClient.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", string.Format("Bearer {0}", accesstoken));
-            var boundaryParameter = form.Headers.ContentType
-                                        .Parameters.Single(p => p.Name == "boundary");
+            var boundaryParameter = form.Headers.ContentType.Parameters.Single(p => p.Name == "boundary");
             boundaryParameter.Value = boundaryParameter.Value.Replace("\"", "");
             ServicePointManager.SecurityProtocol = SecurityProtocolType.Ssl3 | SecurityProtocolType.Tls | SecurityProtocolType.Tls11 | SecurityProtocolType.Tls12;
             HttpResponseMessage response = httpClient.PostAsync(postUrl, form).Result;
             response.EnsureSuccessStatusCode();
             httpClient.Dispose();
+           // File.AppendAllText(tempPath, $"{response.EnsureSuccessStatusCode()}--{Environment.NewLine}");
+            File.AppendAllText(tempPath, $"uploaded image to super{Environment.NewLine}");
             string sd = response.Content.ReadAsStringAsync().Result;
             dynamic imageRe = JsonConvert.DeserializeObject(sd);
-            string FinalUrl = "https://superapi.techforce.ai/botapi/image/" + imageRe.data.image_id.Value;
+            File.AppendAllText(tempPath, $"{sd}--{Environment.NewLine}");
+            string FinalUrl = "https://superapiqa.development.techforce.ai/botapi/image/" + imageRe.data.image_id.Value;
+            File.AppendAllText(tempPath, $"{FinalUrl}--{Environment.NewLine}");
             return FinalUrl;            
         }
 
         public static string GetAccessTokenFromRefreshToken(string refreshtoken)
         {
-            var postUrl = new Uri("https://emcauthawsprod.techforce.ai/auth/realms/techforce/protocol/openid-connect/token");
+            var postUrl = new Uri("https://superssoqa.development.techforce.ai/auth/realms/techforce/protocol/openid-connect/token");
             Dictionary<string, string> dictObj = new Dictionary<string, string> {
                                 { "client_id","super-extension" },
                                 {"refresh_token",refreshtoken},
@@ -975,9 +1107,35 @@ namespace RPADesktopActivityMonitor
             HttpResponseMessage response = httpClient.PostAsync(postUrl, content).Result;
             string res = response.Content.ReadAsStringAsync().Result;
             dynamic resp = JsonConvert.DeserializeObject(res);
+            IsAccessTokenStored = true;
+            StoredAccessToken = resp.access_token;
             return resp.access_token;
         }
+        public static string GetStoredAccessToken(string refreshToken)
+        {
+            if (File.Exists(Path.Combine(Path.GetTempPath(), "StoredAccessToken.txt")))
+            {
+                StoredAccessToken = File.ReadAllText(Path.Combine(Path.GetTempPath(), "StoredAccessToken.txt"));
+                var getUrl = new Uri("https://superssoqa.development.techforce.ai/auth/realms/techforce/protocol/openid-connect/userinfo");
+                HttpClient httpClient = new HttpClient();
+                httpClient.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", string.Format("Bearer {0}", StoredAccessToken));
+                ServicePointManager.SecurityProtocol = SecurityProtocolType.Ssl3 | SecurityProtocolType.Tls | SecurityProtocolType.Tls11 | SecurityProtocolType.Tls12;
+                HttpResponseMessage response = httpClient.GetAsync(getUrl).Result;
+                if (response.IsSuccessStatusCode)
+                {
+                    return StoredAccessToken;
+                }
+                else
+                {
+                    return GetAccessTokenFromRefreshToken(refreshToken);
+                }
+            }
+            else
+            {
+                return GetAccessTokenFromRefreshToken(refreshToken);
+            }
 
+        }
         private bool isWindowExcluded()
         {
             string processName = GetActiveApplicationName();
